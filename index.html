@@ -1,0 +1,209 @@
+<!DOCTYPE html>
+<html lang="en">
+    <head>
+        <title>S&euro;PA Web-Editor</title>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <meta name="author" content="Leonex Internet GmbH">
+        <meta name="keywords" content="sepa, debit, editor, modify">
+        <meta name="description" content="HTML5 online SEPA Web-Editor for working locally with SEPA XML files.">
+        <link href="https://cdnjs.cloudflare.com/ajax/libs/twitter-bootstrap/3.3.6/css/bootstrap.min.css" media="screen" rel="stylesheet">
+        <style media="screen">
+            body {
+                padding-top: 70px; /* this is needed because of fixed navbar */
+            }
+            .navbar-fixed-top .navbar-collapse {
+                padding-right: 15px;
+            }
+        </style>
+    </head>
+    <body ng-app="se" ng-controller="MainController">
+        <nav class="navbar navbar-default navbar-fixed-top">
+            <div class="container-fluid">
+                <div class="navbar-header">
+                    <button type="button" class="navbar-toggle collapsed" data-toggle="collapse" data-target="#navbar-collapse" aria-expanded="false">
+                        <span class="sr-only">Toggle navigation</span>
+                        <span class="icon-bar"></span>
+                        <span class="icon-bar"></span>
+                        <span class="icon-bar"></span>
+                    </button>
+                  <a class="navbar-brand" href="#">S&euro;PA Web-Editor</a>
+                </div>
+                <div class="collapse navbar-collapse" id="navbar-collapse">
+                    <button type="button" class="btn btn-default navbar-btn" ng-disabled="false" ng-click="open()">
+                        <span class="glyphicon glyphicon-folder-open"></span>&nbsp; Open
+                    </button>
+                    <button type="button" class="btn btn-default navbar-btn" ng-disabled="!modified" ng-click="save()">
+                        <span class="glyphicon glyphicon-floppy-disk"></span> Save
+                    </button>
+                    <p class="navbar-text navbar-right">Published by <a href="http://leonex.de">LEONEX Internet GmbH</a></p>
+                </div>
+            </div>
+        </nav>
+
+        <div class="container-fluid" ng-if="!file">
+            <div class="row">
+                <div class="col-sm-12">
+                    <div class="alert alert-info">
+                        <p>Please open a file.</p>
+                        <p><strong>We guarantee</strong> that no data is sent to the server. Everything is kept locally on your device.</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="container-fluid" ng-if="file">
+            <div class="row">
+                <div class="col-sm-6">
+                    <dl class="dl-horizontal">
+                        <dt>Total Amount</dt>
+                        <dd>{{ totalAmount || 0 }} EUR</dd>
+                        <dt>Transactions</dt>
+                        <dd>{{ numberOfTransactions || 0 }}</dd>
+                    </dl>
+                </div>
+                <div class="col-sm-6">
+                    <dl class="dl-horizontal">
+                        <dt>Creditor</dt>
+                        <dd>{{ creditor.name }}</dd>
+                        <dt>IBAN</dt>
+                        <dd>{{ creditor.iban }}</dd>
+                        <dt>BIC</dt>
+                        <dd>{{ creditor.bic }}</dd>
+                        <dt>Scheme ID</dt>
+                        <dd>{{ creditor.schemeId }}</dd>
+                    </dl>
+                </div>
+            </div>
+            <div class="row">
+                <div class="col-sm-12">
+                    <h2>Transactions</h2>
+                    <table class="table table-condensed table-striped table-bordered">
+                        <tr>
+                            <th>Position</th>
+                            <th>Name</th>
+                            <th>IBAN, BIC</th>
+                            <th>Amount, Currency</th>
+                            <th>Reference</th>
+                            <th>Actions</th>
+                        </tr>
+                        <tr ng-repeat="(index, transaction) in transactions">
+                            <td>{{ index + 1 }}</td>
+                            <td>{{ transaction.name }}</td>
+                            <td>{{ transaction.iban }}, {{ transaction.bic }}</td>
+                            <td class="text-right">{{ transaction.amount }} {{ transaction.currency }}</td>
+                            <td>{{ transaction.reference }}</td>
+                            <td><button type="button" class="btn btn-small" ng-disabled="false" ng-click="remove(transaction)" title="Remove Transaction">Remove</button></td>
+                        </tr>
+                    </table>
+                </div>
+            </div>
+        </div>
+
+        <!-- javascript libs -->
+        <script type="text/javascript" src="https://cdnjs.cloudflare.com/ajax/libs/jquery/2.2.4/jquery.min.js"></script>
+        <script type="text/javascript" src="https://cdnjs.cloudflare.com/ajax/libs/twitter-bootstrap/3.3.6/js/bootstrap.min.js"></script>
+        <script type="text/javascript" src="https://cdnjs.cloudflare.com/ajax/libs/angular.js/1.5.7/angular.min.js"></script>
+        <script type="text/javascript" src="https://cdnjs.cloudflare.com/ajax/libs/lodash.js/4.13.1/lodash.min.js"></script>
+
+        <script type="text/javascript">
+            angular
+                .module('se', [])
+                .controller('MainController', ['$scope', function($scope) {
+                    $scope.file = null;
+                    $scope.totalAmount = null;
+                    $scope.numberOfTransactions = null;
+                    $scope.creditor = {};
+                    $scope.transactions = [];
+                    $scope.modified = false;
+
+                    $scope.open = function() {
+                        var element = document.createElement('input');
+                        element.setAttribute('type', 'file');
+                        element.addEventListener('change', onFileOpened);
+                        element.style.display = 'none';
+                        element.click();
+                    };
+
+                    $scope.remove = function (transaction) {
+                        var index = $scope.transactions.indexOf(transaction);
+                        $scope.transactions.splice(index, 1);
+                        transaction.domNode.parentNode.removeChild(transaction.domNode);
+
+                        var ctrlSumNodes = $scope.xml.getElementsByTagName('CtrlSum');
+                        ctrlSumNodes[0].textContent = (ctrlSumNodes[0].textContent - transaction.amount).toFixed(2);
+                        ctrlSumNodes[1].textContent = ctrlSumNodes[0].textContent;
+                        $scope.totalAmount = ctrlSumNodes[0].textContent;
+
+                        var nbOfTxsNodes = $scope.xml.getElementsByTagName('NbOfTxs');
+                        nbOfTxsNodes[0].textContent = (nbOfTxsNodes[0].textContent - 1).toString();
+                        nbOfTxsNodes[1].textContent = nbOfTxsNodes[0].textContent;
+                        $scope.numberOfTransactions = nbOfTxsNodes[0].textContent;
+
+                        $scope.modified = true;
+                    };
+
+                    $scope.save = function() {
+                        if ($scope.modified) {
+                            var xmlContent = encodeURIComponent('<?xml version="1.0" encoding="UTF-8"?>' + "\n" + $scope.xml.documentElement.outerHTML);
+                            var element = document.createElement('a');
+                            element.setAttribute('href', 'data:application/octet-stream;charset=utf-8,' + xmlContent);
+                            element.setAttribute('download', $scope.file.name);
+
+                            element.style.display = 'none';
+//                            document.body.appendChild(element);
+
+                            element.click();
+
+//                            document.body.removeChild(element);
+                        }
+                    };
+
+                    function onFileOpened() {
+                        $scope.file = this.files[0];
+                        if ($scope.file) {
+                            var reader = new FileReader();
+                            reader.onload = function(e) {
+                                var parser = new DOMParser();
+                                $scope.xml = parser.parseFromString(e.target.result, "text/xml");
+
+                                $scope.totalAmount = $scope.xml.getElementsByTagName('GrpHdr')[0].getElementsByTagName('CtrlSum')[0].textContent;
+                                $scope.numberOfTransactions = $scope.xml.getElementsByTagName('GrpHdr')[0].getElementsByTagName('NbOfTxs')[0].textContent;
+                                $scope.creditor = {
+                                    name: $scope.xml.getElementsByTagName('PmtInf')[0].getElementsByTagName('Cdtr')[0].getElementsByTagName('Nm')[0].textContent,
+                                    iban: $scope.xml.getElementsByTagName('PmtInf')[0].getElementsByTagName('CdtrAcct')[0].getElementsByTagName('IBAN')[0].textContent,
+                                    bic: $scope.xml.getElementsByTagName('PmtInf')[0].getElementsByTagName('CdtrAgt')[0].getElementsByTagName('BIC')[0].textContent,
+                                    schemeId: $scope.xml.getElementsByTagName('PmtInf')[0].getElementsByTagName('CdtrSchmeId')[0].getElementsByTagName('Id')[0].getElementsByTagName('Id')[0].textContent
+                                };
+
+                                $scope.transactions = [];
+                                _.forEach($scope.xml.getElementsByTagName('DrctDbtTxInf'), function(txNode) {
+                                    $scope.transactions.push({
+                                        name: txNode.getElementsByTagName('Dbtr')[0].getElementsByTagName('Nm')[0].textContent,
+                                        iban: txNode.getElementsByTagName('IBAN')[0].textContent,
+                                        bic: txNode.getElementsByTagName('BIC')[0].textContent,
+                                        amount: txNode.getElementsByTagName('InstdAmt')[0].textContent,
+                                        currency: attributeListToOject(txNode.getElementsByTagName('InstdAmt')[0].attributes).Ccy,
+                                        reference: txNode.getElementsByTagName('RmtInf')[0].getElementsByTagName('Ustrd')[0].textContent,
+                                        domNode: txNode
+                                    });
+                                });
+
+                                $scope.$apply();
+                            };
+                            reader.readAsText($scope.file);
+                        }
+                    }
+
+                    function attributeListToOject(list) {
+                        var result = {};
+                        _.forEach(list, function(attr) {
+                            result[attr.nodeName] = attr.nodeValue;
+                        });
+                        return result;
+                    }
+                }])
+            ;
+        </script>
+    </body>
+</html>
